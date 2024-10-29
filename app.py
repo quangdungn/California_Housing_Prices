@@ -1,18 +1,23 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import numpy as np
 import joblib
 
 # 1. Tải các mô hình đã lưu
 models = {
-    'Linear Regression': joblib.load('linear_regression_model.pkl'),
-    'Ridge Regression': joblib.load('ridge_regression_model.pkl'),
-    'Neural Network': joblib.load('neural_network_model.pkl'),
-    'Stacking Model': joblib.load('stacking_model.pkl')
+    'Linear Regression': joblib.load('linear_regression_model.joblib'),
+    'Ridge Regression': joblib.load('ridge_regression_model.joblib'),
+    'Neural Network': joblib.load('mlp_regressor_model.joblib'),
+    'Stacking Model': joblib.load('stacking_regressor_model.joblib')
 }
 
-# 2. Đọc dữ liệu gốc để lấy giá trị trung vị cho các cột số
+# 2. Đọc dữ liệu gốc để lấy giá trị trung vị cho các cột số và lấy danh sách các cột
 data = pd.read_csv('housing.csv')
+
+# Lưu danh sách các cột sau khi đã thực hiện get_dummies trong quá trình huấn luyện
+data = data.dropna()
+data = pd.get_dummies(data, columns=['ocean_proximity'])
+feature_columns = data.drop('median_house_value', axis=1).columns.tolist()
 
 # 3. Lấy danh sách các đặc trưng
 numeric_features = [
@@ -37,7 +42,7 @@ for feature in numeric_features:
 # Nhập đặc trưng phân loại
 input_data['ocean_proximity'] = st.selectbox(
     'Chọn ocean_proximity',
-    options=data['ocean_proximity'].unique(),
+    options=data.columns[data.columns.str.startswith('ocean_proximity_')].str.replace('ocean_proximity_', ''),
     index=0
 )
 
@@ -57,7 +62,7 @@ if st.button('Dự đoán'):
     # Chuyển các giá trị số từ chuỗi sang số thực
     for col in numeric_features:
         if input_df[col][0] == '':
-            # st.warning(f'Bạn chưa nhập giá trị cho {col}. Sẽ sử dụng giá trị trung vị.')
+            # Sử dụng giá trị trung vị nếu người dùng không nhập
             input_df[col] = data[col].median()
         else:
             try:
@@ -66,9 +71,16 @@ if st.button('Dự đoán'):
                 st.error(f'Giá trị nhập vào cho {col} không hợp lệ. Vui lòng nhập số.')
                 st.stop()
 
-    # Xử lý giá trị thiếu cho 'total_bedrooms' nếu có
-    if pd.isnull(input_df['total_bedrooms'][0]):
-        input_df['total_bedrooms'] = data['total_bedrooms'].median()
+    # One-hot encoding cho 'ocean_proximity'
+    ocean_proximity_dummies = pd.get_dummies(input_df['ocean_proximity'], prefix='ocean_proximity')
+    input_df = pd.concat([input_df[numeric_features], ocean_proximity_dummies], axis=1)
+
+    # Đảm bảo rằng các cột trong input_df khớp với các cột trong quá trình huấn luyện
+    for col in feature_columns:
+        if col not in input_df.columns:
+            input_df[col] = 0  # Thêm cột thiếu với giá trị 0
+
+    input_df = input_df[feature_columns]  # Sắp xếp lại thứ tự các cột
 
     # Lấy mô hình được chọn
     selected_model = models[model_name]
